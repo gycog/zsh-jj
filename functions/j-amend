@@ -1,0 +1,19 @@
+#autoload
+#
+# j-amend [描述]
+#
+# 把当前工作副本 (@) 的改动压入父 commit (@-), 类似 git commit --amend.
+# 如果提供了描述文本, 会顺带把父 commit 的 description 改写为该文本.
+
+emulate -L zsh
+
+if (( ! $+commands[jj] )); then
+    print -r -- $'\033[1;31m❌ 错误: 未检测到 jj 命令\033[0m' >&2
+    return 1
+fi
+
+if (( # == 0 )); then
+    jj squash
+else
+    jj squash -m "$*"
+fi

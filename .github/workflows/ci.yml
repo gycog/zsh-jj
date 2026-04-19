@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  zsh-syntax:
+    name: zsh syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Check plugin entrypoint
+        run: zsh -n zsh-jj.plugin.zsh
+
+      - name: Check autoload functions
+        run: |
+          set -e
+          for f in functions/*; do
+            echo "-> $f"
+            zsh -n "$f"
+          done
+
+      - name: Check completions
+        run: |
+          set -e
+          for f in completions/*; do
+            echo "-> $f"
+            zsh -n "$f"
+          done
+
+  shellcheck:
+    name: shellcheck install-plugin.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      - name: Run shellcheck
+        run: shellcheck install-plugin.sh
+
+  smoke:
+    name: Smoke load (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zsh (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Load plugin and verify
+        shell: zsh {0}
+        run: |
+          set -e
+          autoload -Uz compinit && compinit -u 2>/dev/null || true
+
+          source ./zsh-jj.plugin.zsh
+
+          [[ -n "$ZSH_JJ_VERSION" ]] || { echo "::error::ZSH_JJ_VERSION empty"; exit 1; }
+          [[ "$ZSH_JJ_VERSION" == "$(cat VERSION)" ]] || {
+              echo "::error::version mismatch: plugin=$ZSH_JJ_VERSION file=$(cat VERSION)"; exit 1;
+          }
+          echo "version OK: $ZSH_JJ_VERSION"
+
+          for fn in jb jr j-amend j-wip j-ff j-init-all j-check j-sync; do
+              autoload +X $fn 2>/dev/null
+              typeset -f $fn >/dev/null || { echo "::error::function $fn not autoload-able"; exit 1; }
+              echo "  function OK: $fn"
+          done
+
+          expected_aliases=(jl jlp jls jla js jv jvs jsh jfl jop jev \
+                           jn je jd ja ju jsq jsp jre jrs jdup jbo \
+                           jnx jpv \
+                           jbl jbla jbc jbm jbs jbd jbf jbt \
+                           jf jfa jp jpn jpa jgc)
+          for a in "${expected_aliases[@]}"; do
+              alias "$a" >/dev/null 2>&1 || { echo "::error::alias $a not defined"; exit 1; }
+          done
+          echo "all ${#expected_aliases} aliases OK"
+
+  version-sync:
+    name: VERSION file ↔ plugin constant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check VERSION file is plain semver
+        run: |
+          v="$(cat VERSION)"
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+              echo "::error::VERSION file content '$v' is not semver"; exit 1
+          fi
+          echo "VERSION=$v"

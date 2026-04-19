@@ -1,0 +1,23 @@
+#autoload
+#
+# j-ff <bookmark> [revision]
+#
+# 把 bookmark 快速推进到指定 revision (默认 @-, 即当前改动的父 commit).
+# 类似 git branch -f <name> <rev>. 若需要允许向后移动, 请自行加 --allow-backwards.
+
+emulate -L zsh
+
+if (( ! $+commands[jj] )); then
+    print -r -- $'\033[1;31m❌ 错误: 未检测到 jj 命令\033[0m' >&2
+    return 1
+fi
+
+local bookmark=$1
+local target=${2:-@-}
+
+if [[ -z "$bookmark" ]]; then
+    print -r -- "用法: j-ff <bookmark> [revision=@-]"
+    return 1
+fi
+
+jj bookmark set "$bookmark" -r "$target"

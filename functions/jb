@@ -1,0 +1,35 @@
+#autoload
+#
+# jb <query>
+#
+# 不区分大小写查找 bookmark（本地优先，其次远程 @xxx），
+# 匹配到则执行 `jj new <bookmark>` 创建新改动
+
+emulate -L zsh
+setopt local_options pipe_fail
+
+local query=$1
+if [[ -z "$query" ]]; then
+    print -r -- "用法: jb <分支名>"
+    return 1
+fi
+
+if ! command -v jj >/dev/null 2>&1; then
+    print -r -- $'\033[1;31m❌ 错误: 未检测到 jj 命令\033[0m' >&2
+    return 1
+fi
+
+local target
+target=$(jj bookmark list --all 2>/dev/null \
+    | grep -iE "^${query}:| ${query}@" \
+    | head -n 1 \
+    | awk '{print $1}' \
+    | sed 's/://')
+
+if [[ -n "$target" ]]; then
+    print -r -- $'\033[1;32m🎯 自动匹配到: '"$target"$'\033[0m'
+    jj new "$target"
+else
+    print -r -- $'\033[1;31m❌ 找不到包含 \''"$query"$'\' 的分支\033[0m' >&2
+    return 1
+fi

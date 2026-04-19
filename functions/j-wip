@@ -1,0 +1,20 @@
+#autoload
+#
+# j-wip <描述>
+#
+# 一步完成: 给当前改动打描述, 然后新建空改动继续工作.
+# 相当于 git commit -m "..." 并立即进入下一个工作区.
+
+emulate -L zsh
+
+if (( ! $+commands[jj] )); then
+    print -r -- $'\033[1;31m❌ 错误: 未检测到 jj 命令\033[0m' >&2
+    return 1
+fi
+
+if (( # == 0 )); then
+    print -r -- "用法: j-wip <描述>"
+    return 1
+fi
+
+jj describe -m "$*" && jj new

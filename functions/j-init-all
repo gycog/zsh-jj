@@ -1,0 +1,58 @@
+#autoload
+#
+# j-init-all
+#
+# 从当前目录递归查找 .git 仓库，对每个未初始化的仓库执行
+# `jj git init --colocate`，形成 git/jj 共生模式。
+# 搜索深度由 ZSH_JJ_SEARCH_MAXDEPTH 控制（默认 5）
+
+emulate -L zsh
+
+if ! command -v jj >/dev/null 2>&1; then
+    print -r -- $'\033[1;31m❌ 错误: 找不到 jj 命令，请先安装 Jujutsu\033[0m' >&2
+    return 1
+fi
+
+local maxdepth=${ZSH_JJ_SEARCH_MAXDEPTH:-5}
+local -i count=0 skipped=0 failed=0
+local git_entry repo_dir
+local -a repos
+
+print -r -- $'\033[1;34m=== 🏗️  开始全量初始化 Jujutsu (共生模式) ===\033[0m'
+print -r -- "    搜索深度: $maxdepth (可通过 ZSH_JJ_SEARCH_MAXDEPTH 调整)"
+
+while IFS= read -r git_entry; do
+    repo_dir=${git_entry:h}
+    [[ "$repo_dir" == "." ]] && continue
+    repos+=("$repo_dir")
+done < <(find . -maxdepth "$maxdepth" -name ".git" 2>/dev/null)
+
+if (( ${#repos} == 0 )); then
+    print -r -- $'\033[33m⚠️  未找到任何 .git 仓库\033[0m'
+    return 0
+fi
+
+for repo_dir in "${repos[@]}"; do
+    print -r -- ""
+    print -r -- $'\033[1;32m📂 处理中: '"$repo_dir"$'\033[0m'
+
+    if [[ -d "$repo_dir/.jj" ]]; then
+        print -r -- "➡️  跳过: 已经是 jj 仓库"
+        (( skipped++ ))
+        continue
+    fi
+
+    if ( cd "$repo_dir" && jj git init --colocate ); then
+        print -r -- "✅ 成功: 已注入 Jujutsu"
+        (( count++ ))
+    else
+        print -r -- $'\033[1;31m⚠️  失败: 初始化过程中出错\033[0m'
+        (( failed++ ))
+    fi
+done
+
+print -r -- ""
+print -r -- $'\033[1;34m------------------------------------------------\033[0m'
+printf $'🎉 \033[1;32m处理完毕!\033[0m  \033[32m成功:%d\033[0m  \033[36m跳过:%d\033[0m  \033[31m失败:%d\033[0m\n' \
+    $count $skipped $failed
+print -r -- $'🔎 提示: 执行 \033[1;33mj-check\033[0m 查看各仓库状态'

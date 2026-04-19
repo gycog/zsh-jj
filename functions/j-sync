@@ -1,0 +1,17 @@
+#autoload
+#
+# j-sync
+#
+# 从当前目录递归查找 .jj 仓库，对每个仓库执行 jj git fetch。
+# 搜索深度由 ZSH_JJ_SEARCH_MAXDEPTH 控制（默认 5）
+
+emulate -L zsh
+
+local maxdepth=${ZSH_JJ_SEARCH_MAXDEPTH:-5}
+local jj_dir repo
+
+find . -maxdepth "$maxdepth" -name ".jj" -type d 2>/dev/null | while IFS= read -r jj_dir; do
+    repo=${jj_dir:h}
+    print -r -- "🔄 Fetching -> $repo"
+    ( cd "$repo" && jj git fetch 2>/dev/null )
+done

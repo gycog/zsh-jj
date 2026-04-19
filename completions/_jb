@@ -1,0 +1,15 @@
+#compdef jb
+#
+# 为 jb 命令提供 zsh 自动补全：从 `jj bookmark list --all` 提取本地 / 远程
+# bookmark 名称作为候选。仓库外执行时静默失败，不影响正常 Tab。
+
+local -a bookmarks
+
+bookmarks=(${(f)"$(jj bookmark list --all 2>/dev/null \
+    | awk '{ sub(/:$/,"",$1); sub(/@.*$/,"",$1); print $1 }' \
+    | sort -u \
+    | grep -v '^$')"})
+
+if (( ${#bookmarks} > 0 )); then
+    _describe -t bookmarks 'jj bookmark' bookmarks
+fi

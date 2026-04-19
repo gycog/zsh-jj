@@ -1,0 +1,25 @@
+#autoload
+#
+# jr [额外参数...]
+#
+# rebase 当前改动到主干分支。主干候选由 ZSH_JJ_DEV_BOOKMARKS 控制
+# （空格分隔，默认 "Dev dev main master"），使用 jj 的 coalesce()
+# 按顺序选第一个存在的 bookmark
+
+emulate -L zsh
+
+if ! command -v jj >/dev/null 2>&1; then
+    print -r -- $'\033[1;31m❌ 错误: 未检测到 jj 命令\033[0m' >&2
+    return 1
+fi
+
+local -a bookmarks
+bookmarks=(${=ZSH_JJ_DEV_BOOKMARKS:-Dev dev main master})
+
+if (( ${#bookmarks} == 0 )); then
+    print -r -- $'\033[1;31m❌ 错误: ZSH_JJ_DEV_BOOKMARKS 为空\033[0m' >&2
+    return 1
+fi
+
+local coalesce_arg="coalesce(${(j:,:)bookmarks})"
+jj rebase -d "$coalesce_arg" "$@"
