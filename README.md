@@ -10,18 +10,20 @@ A Zsh plugin that turns [Jujutsu (jj)](https://github.com/jj-vcs/jj) into a dail
 
 ## 特性
 
+- **jj 自管理**（v0.3+）：插件自带 `tools/fetch-jj.sh`，装插件时一并把 `jj` 二进制下载到 `$XDG_DATA_HOME/zsh-jj/bin/jj`，shell 启动时按需做懒检查并静默升级——**装完插件开箱即用，不需要手动管 jj**
 - **40+ 个短别名** 覆盖 jj 常用命令：查询 / 编辑 / 导航 / bookmark / git 五类，双字母为主
-- **jj 官方 zsh 补全自动集成**：首次加载时缓存到 `$XDG_CACHE_HOME/zsh-jj/_jj`，之后 `jj <Tab>`、`jp <Tab>`、`jbl <Tab>` 全部命令和选项都能补全
+- **jj 官方 zsh 补全自动集成**：首次加载时缓存到 `$XDG_CACHE_HOME/zsh-jj/_jj`，之后 `jj <Tab>`、`jp <Tab>`、`jbl <Tab>` 全部命令和选项都能补全；`jj` 升级后自动重建
 - **自研高频函数**：
   - `jb <关键字>` —— 大小写不敏感地查找 bookmark（本地优先，fallback 远程），匹配后自动 `jj new`
   - `jr` —— rebase 到主干，目标按 `ZSH_JJ_DEV_BOOKMARKS` 的 coalesce 顺序自动选择
   - `j-amend [描述]` —— 当前改动压入父 commit，类似 `git commit --amend`
   - `j-wip <描述>` —— 一步 describe + new，类似 `git commit -m` 并进入下一工作区
   - `j-ff <bookmark> [rev]` —— 快进 bookmark 到指定 revision（默认 `@-`）
+  - `j-upgrade [--force|--check]` —— 手动触发 jj 下载/升级
   - `j-init-all` / `j-check` / `j-sync` —— 批量管理多个 jj/git 仓库
 - **bookmark 智能 Tab**：`jb <Tab>` 和 `j-ff <Tab>` 从 `jj bookmark list --all` 实时补全分支名
 - **标准 autoload 结构**：启动零开销，兼容 oh-my-zsh / zinit / antigen / 手动 source
-- **全量可配置**：4 个环境变量，可一键禁用别名或禁用补全集成
+- **全量可配置**：7 个环境变量，可按需关闭别名、补全集成或自动升级
 
 ---
 
@@ -29,21 +31,24 @@ A Zsh plugin that turns [Jujutsu (jj)](https://github.com/jj-vcs/jj) into a dail
 
 ### 一键脚本（推荐）
 
-自动识别你是否有 Oh-My-Zsh，相应地放到正确位置并给出启用提示：
+自动识别你是否有 Oh-My-Zsh，把插件放到正确位置，**并顺便把 `jj` 二进制下载到 `~/.local/share/zsh-jj/bin/jj`**：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gycog/zsh-jj/main/install-plugin.sh | bash
 ```
 
-或本地执行：`bash install-plugin.sh [--update|--uninstall|--help]`
+或本地执行：`bash install-plugin.sh [--update|--skip-jj|--uninstall|--help]`
 
 脚本支持以下环境变量：
 
-| 变量             | 作用                                                 |
-| ---------------- | ---------------------------------------------------- |
-| `GH_PROXY`       | GitHub 下载代理，如 `"https://ghfast.top/"`           |
-| `ZSH_JJ_DIR`     | 自定义安装目录（覆盖 oh-my-zsh 自动检测）            |
-| `ZSH_JJ_BRANCH`  | 克隆的分支或 tag，默认 `main`；锁定版本用 `v0.2.0`    |
+| 变量             | 作用                                                          |
+| ---------------- | ------------------------------------------------------------- |
+| `GH_PROXY`       | 克隆插件仓库用的代理前缀，如 `"https://ghfast.top/"`           |
+| `ZSH_JJ_DIR`     | 自定义插件目录（覆盖 oh-my-zsh 自动检测）                     |
+| `ZSH_JJ_BRANCH`  | 插件分支或 tag，默认 `main`；锁定版本用 `v0.3.0`               |
+| `ZSH_JJ_JJ_DIR`  | `jj` 二进制安装根目录，默认 `$XDG_DATA_HOME/zsh-jj`（实际二进制在 `$ZSH_JJ_JJ_DIR/bin/jj`） |
+
+> 已经自己装好 `jj` 的用户，加 `--skip-jj` 跳过二进制下载，插件会直接用 `PATH` 里已有的 `jj`。
 
 ### Oh-My-Zsh（手动）
 
@@ -82,7 +87,8 @@ echo 'source ~/.zsh-jj/zsh-jj.plugin.zsh' >> ~/.zshrc
 ### 前置要求
 
 - `zsh` 5.8+
-- `jj` 在 `PATH` 中（参考 [Jujutsu 安装指引](https://jj-vcs.github.io/jj/latest/install-and-setup/)）
+- `curl`、`jq`、`tar`、`gzip`（下载 `jj` 时用；几乎所有发行版自带）
+- 你**不需要**事先装 `jj`——`install-plugin.sh` 会用 `tools/fetch-jj.sh` 自动下载到 `$XDG_DATA_HOME/zsh-jj/bin/jj`，插件加载时把它加进 `PATH`。已经有系统 `jj` 的话，原有的会被保留、`j-upgrade` 只更新插件自管理的那份。
 
 ---
 
@@ -155,16 +161,17 @@ echo 'source ~/.zsh-jj/zsh-jj.plugin.zsh' >> ~/.zshrc
 
 ### 函数
 
-| 函数                    | 说明                                                                 |
-| ----------------------- | -------------------------------------------------------------------- |
-| `jb <关键字>`            | 在本地+远程 bookmark 里大小写不敏感查找，自动 `jj new`              |
-| `jr [参数]`              | rebase 到 `ZSH_JJ_DEV_BOOKMARKS` 里第一个存在的 bookmark             |
-| `j-amend [描述]`         | 当前改动压入父 commit，可选顺带改写父的描述                           |
-| `j-wip <描述>`           | 一步完成 describe + new（commit 完直接进下一个改动）                  |
-| `j-ff <bookmark> [rev]`  | 快进 bookmark 到指定 revision（默认 `@-`）                           |
-| `j-init-all`             | 递归扫描 `.git` 仓库，批量 `jj git init --colocate`                   |
-| `j-check`                | 递归扫描 `.jj` 仓库，打印有改动的 / 未描述的条目                      |
-| `j-sync`                 | 递归扫描 `.jj` 仓库，批量 `jj git fetch`                             |
+| 函数                       | 说明                                                                 |
+| -------------------------- | -------------------------------------------------------------------- |
+| `jb <关键字>`               | 在本地+远程 bookmark 里大小写不敏感查找，自动 `jj new`              |
+| `jr [参数]`                 | rebase 到 `ZSH_JJ_DEV_BOOKMARKS` 里第一个存在的 bookmark             |
+| `j-amend [描述]`            | 当前改动压入父 commit，可选顺带改写父的描述                           |
+| `j-wip <描述>`              | 一步完成 describe + new（commit 完直接进下一个改动）                  |
+| `j-ff <bookmark> [rev]`     | 快进 bookmark 到指定 revision（默认 `@-`）                           |
+| `j-upgrade [--force\|--check]` | 下载 / 升级 `jj` 二进制到 `$ZSH_JJ_JJ_DIR/bin/jj`；`--check` 只探测不下载 |
+| `j-init-all`                | 递归扫描 `.git` 仓库，批量 `jj git init --colocate`                   |
+| `j-check`                   | 递归扫描 `.jj` 仓库，打印有改动的 / 未描述的条目                      |
+| `j-sync`                    | 递归扫描 `.jj` 仓库，批量 `jj git fetch`                             |
 
 ### 自动补全
 
@@ -195,12 +202,17 @@ j-ff release<Tab>   → release-1.0  release-2.0  ...
 
 所有环境变量都有默认值；在 source 插件之前 `export` 即可生效。
 
-| 变量                           | 默认值                   | 说明                                                 |
-| ------------------------------ | ------------------------ | ---------------------------------------------------- |
-| `ZSH_JJ_SEARCH_MAXDEPTH`       | `5`                      | `j-init-all / j-check / j-sync` 的 `find` 最大深度   |
-| `ZSH_JJ_DEV_BOOKMARKS`         | `"Dev dev main master"`  | `jr` 的 rebase 目标候选（空格分隔，按顺序）          |
-| `ZSH_JJ_DISABLE_ALIASES`       | `0`                      | 设为 `1` 则不定义任何短别名（函数仍可用）            |
-| `ZSH_JJ_DISABLE_JJ_COMPLETION` | `0`                      | 设为 `1` 则不自动生成 / 注册 `jj` 官方补全           |
+| 变量                            | 默认值                                            | 说明                                                 |
+| ------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| `ZSH_JJ_SEARCH_MAXDEPTH`        | `5`                                               | `j-init-all / j-check / j-sync` 的 `find` 最大深度   |
+| `ZSH_JJ_DEV_BOOKMARKS`          | `"Dev dev main master"`                           | `jr` 的 rebase 目标候选（空格分隔，按顺序）          |
+| `ZSH_JJ_DISABLE_ALIASES`        | `0`                                               | 设为 `1` 则不定义任何短别名（函数仍可用）            |
+| `ZSH_JJ_DISABLE_JJ_COMPLETION`  | `0`                                               | 设为 `1` 则不自动生成 / 注册 `jj` 官方补全           |
+| `ZSH_JJ_JJ_DIR`                 | `${XDG_DATA_HOME:-$HOME/.local/share}/zsh-jj`     | `jj` 二进制安装根目录（实际二进制在 `$ZSH_JJ_JJ_DIR/bin/jj`） |
+| `ZSH_JJ_UPGRADE_INTERVAL_DAYS`  | `7`                                               | 懒检查最小间隔，超过才会触发后台异步升级             |
+| `ZSH_JJ_DISABLE_AUTO_UPGRADE`   | `0`                                               | 设为 `1` 则完全关闭后台静默升级，只用手动 `j-upgrade` |
+
+**下载代理**：`tools/fetch-jj.sh` 用 `curl` 直接下载，会自动读取 `http_proxy` / `https_proxy` / `all_proxy` 环境变量——墙内加速只需 `export https_proxy=http://...` 即可。
 
 示例：
 
@@ -208,6 +220,12 @@ j-ff release<Tab>   → release-1.0  release-2.0  ...
 # 团队主干叫 trunk，扫描 3 层够用
 export ZSH_JJ_SEARCH_MAXDEPTH=3
 export ZSH_JJ_DEV_BOOKMARKS="trunk main"
+
+# 把 jj 装到别处（比如全部自管理工具都在 ~/opt 下）
+export ZSH_JJ_JJ_DIR="$HOME/opt/jj"
+
+# 内网机器、不想让 shell 自动连 GitHub 检查升级
+export ZSH_JJ_DISABLE_AUTO_UPGRADE=1
 
 # 某个短别名和你已有的配置冲突？可以选择性 unalias（推荐）
 # 在 ~/.zshrc 里 zsh-jj 加载之后加一行：
@@ -220,22 +238,25 @@ unalias jbo 2>/dev/null   # 比如你已经把 jbo 用于别的工具
 
 ```text
 zsh-jj/
-├── zsh-jj.plugin.zsh     # 入口：fpath 注册 + autoload + 别名
+├── zsh-jj.plugin.zsh     # 入口：PATH 注入 + fpath + autoload + 懒升级 + 别名
 ├── functions/            # autoload 函数（无扩展名，zsh 约定）
 │   ├── jb                # bookmark 智能切换
 │   ├── jr                # rebase 到主干（配置驱动）
 │   ├── j-amend           # 压入父 commit
 │   ├── j-wip             # describe + new
 │   ├── j-ff              # 快进 bookmark
+│   ├── j-upgrade         # 下载 / 升级 jj 二进制
 │   ├── j-init-all        # 批量 colocate 初始化
 │   ├── j-check           # 批量查状态
 │   └── j-sync            # 批量 fetch
 ├── completions/          # zsh 补全
 │   └── _jb               # bookmark 动态补全（jb / j-ff 共用）
+├── tools/                # 与 shell 无关的 POSIX bash 工具
+│   └── fetch-jj.sh       # 下载 / 升级 jj 二进制（install-plugin 和 j-upgrade 共用）
 ├── .github/workflows/    # CI / Release
-│   ├── ci.yml            # zsh 语法 + 烟雾加载 + shellcheck + 版本校验
+│   ├── ci.yml            # zsh 语法 + 烟雾加载 + fetch-jj 真实下载 + shellcheck + 版本校验
 │   └── release.yml       # 推 v* tag 时自动发 Release
-├── install-plugin.sh     # 独立安装器（install / update / uninstall）
+├── install-plugin.sh     # 独立安装器（install 插件 + 同时装 jj / update / uninstall）
 ├── VERSION               # 单一版本号来源，CI 会校验与 tag 一致
 ├── LICENSE
 └── README.md
@@ -249,12 +270,22 @@ zsh-jj/
 
 ```bash
 # 1. 改版本
-echo 0.3.0 > VERSION
-git add VERSION
-git commit -m "Release v0.3.0"
+echo 0.4.0 > VERSION
+jj describe -m "Release v0.4.0"
+jj new
 
-# 2. 打 tag
-git tag v0.3.0
+# 2. 打 tag 并推送 (jj 方式)
+jj bookmark set main -r @-        # 让 main 指向 Release commit
+jj git push                        # 推 main
+jj git push --tag v0.4.0 -r @-    # 推 tag (需要 jj 0.33+)
+```
+
+若用 git：
+
+```bash
+echo 0.4.0 > VERSION
+git add VERSION && git commit -m "Release v0.4.0"
+git tag v0.4.0
 git push origin main --tags
 ```
 

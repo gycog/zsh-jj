@@ -1,0 +1,56 @@
+#autoload
+#
+# j-upgrade [--force] [--check] [--quiet]
+#
+# 下载 / 升级 jj 到 $ZSH_JJ_JJ_DIR/bin/jj
+# (默认 ${XDG_DATA_HOME:-$HOME/.local/share}/zsh-jj/bin/jj)
+#
+# 选项:
+#   --force    即使已是最新也重新下载
+#   --check    只检查, 不下载; 退出码 0=已最新 10=有新版本
+#   --quiet    静默 (除错误外)
+#
+# 环境变量:
+#   ZSH_JJ_JJ_DIR        安装根目录 (bin 在其下)
+#   ZSH_JJ_JJ_VERSION    指定版本 (默认 latest)
+#
+# 副作用:
+#   升级成功后会删除 $XDG_CACHE_HOME/zsh-jj/_jj, 让插件下次加载时
+#   根据新二进制的 mtime 重新生成官方补全.
+#
+emulate -L zsh
+setopt err_return pipefail no_unset
+
+local plugin_dir="${ZSH_JJ_PLUGIN_DIR:-${0:A:h:h}}"
+local script="$plugin_dir/tools/fetch-jj.sh"
+
+if [[ ! -x "$script" ]]; then
+    print -r -- "[j-upgrade] 找不到 $script" >&2
+    return 1
+fi
+
+if (( ! $+commands[bash] )); then
+    print -r -- "[j-upgrade] 需要 bash 来运行 $script" >&2
+    return 2
+fi
+
+local bin
+if ! bin="$(bash "$script" "$@")"; then
+    local rc=$?
+    # --check 返回 10 表示有新版本, 对调用者是有用信号, 不视为错误
+    if [[ "$rc" == 10 ]]; then
+        return 10
+    fi
+    return $rc
+fi
+
+# 成功: 触发补全缓存重建
+local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh-jj"
+[[ -f "$cache_dir/_jj" ]] && rm -f "$cache_dir/_jj"
+
+if [[ -n "$bin" && -x "$bin" ]]; then
+    [[ "${*[(I)--quiet]}" -eq 0 && "${*[(I)-q]}" -eq 0 ]] && \
+        print -r -- "[j-upgrade] $("$bin" --version 2>/dev/null)" >&2
+fi
+
+return 0

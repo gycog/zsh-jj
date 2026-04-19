@@ -11,3 +11,6 @@ Thumbs.db
 # Backup
 *.bak
 *~
+
+# Jujutsu colocate metadata (each clone runs `jj git init --colocate` itself)
+.jj/

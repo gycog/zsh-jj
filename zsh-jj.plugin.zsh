@@ -35,12 +35,19 @@ fi
 : ${ZSH_JJ_DISABLE_ALIASES:=0}
 : ${ZSH_JJ_DISABLE_JJ_COMPLETION:=0}
 
+# jj 二进制自管理: 由 tools/fetch-jj.sh 维护, 由 j-upgrade 触发
+: ${ZSH_JJ_JJ_DIR:="${XDG_DATA_HOME:-$HOME/.local/share}/zsh-jj"}
+: ${ZSH_JJ_UPGRADE_INTERVAL_DAYS:=7}
+: ${ZSH_JJ_DISABLE_AUTO_UPGRADE:=0}
+
 # ------------------------------------------------------------------
-# 2. 依赖探测 (仅提示, 不阻断加载)
+# 2. 把插件自管理的 jj/bin 加到 PATH 前面 (若存在)
+#    这样哪怕用户没有系统 jj, 只要跑过一次 j-upgrade 就立即可用
 # ------------------------------------------------------------------
-if (( ! $+commands[jj] )); then
-    print -r -- "[zsh-jj] 警告: 未检测到 jj 命令, 别名和函数已加载但运行时会失败" >&2
-    print -r -- "[zsh-jj] 请先安装 Jujutsu: https://github.com/jj-vcs/jj" >&2
+if [[ -d "$ZSH_JJ_JJ_DIR/bin" ]]; then
+    if [[ ":$PATH:" != *":$ZSH_JJ_JJ_DIR/bin:"* ]]; then
+        path=("$ZSH_JJ_JJ_DIR/bin" $path)
+    fi
 fi
 
 # ------------------------------------------------------------------
@@ -51,7 +58,39 @@ fpath=("$ZSH_JJ_PLUGIN_DIR/functions" "$ZSH_JJ_PLUGIN_DIR/completions" $fpath)
 autoload -Uz \
     jb jr \
     j-amend j-wip j-ff \
-    j-init-all j-check j-sync
+    j-init-all j-check j-sync \
+    j-upgrade
+
+# ------------------------------------------------------------------
+# 3.5 依赖探测 + 懒检查
+#     - 没装 jj: 引导用户跑 j-upgrade (不阻塞加载)
+#     - 装了 jj: 距离上次检查超过 ZSH_JJ_UPGRADE_INTERVAL_DAYS 天时,
+#       后台异步做一次 j-upgrade (静默自动升级, 用户无感知)
+# ------------------------------------------------------------------
+if (( ! $+commands[jj] )); then
+    print -r -- "[zsh-jj] 未检测到 jj, 运行 \`j-upgrade\` 会下载最新版到 $ZSH_JJ_JJ_DIR/bin/jj" >&2
+elif [[ "$ZSH_JJ_DISABLE_AUTO_UPGRADE" != "1" ]]; then
+    _zj_state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/zsh-jj"
+    _zj_stamp="$_zj_state_dir/last-upgrade-check"
+    _zj_should_check=1
+    if [[ -f "$_zj_stamp" ]]; then
+        # 距离上次检查小于 ZSH_JJ_UPGRADE_INTERVAL_DAYS 天则跳过
+        if (( $(date +%s) - $(stat -c %Y "$_zj_stamp" 2>/dev/null \
+                              || stat -f %m "$_zj_stamp" 2>/dev/null \
+                              || echo 0) < ZSH_JJ_UPGRADE_INTERVAL_DAYS * 86400 )); then
+            _zj_should_check=0
+        fi
+    fi
+    if (( _zj_should_check )); then
+        mkdir -p "$_zj_state_dir" 2>/dev/null
+        : >| "$_zj_stamp"
+        # 异步静默升级, 输出写日志, 不阻塞 shell 启动
+        {
+            j-upgrade --quiet >"$_zj_state_dir/last-upgrade.log" 2>&1
+        } &!
+    fi
+    unset _zj_state_dir _zj_stamp _zj_should_check
+fi
 
 # ------------------------------------------------------------------
 # 4. 集成 jj 官方 zsh 补全 (缓存到 XDG_CACHE_HOME)

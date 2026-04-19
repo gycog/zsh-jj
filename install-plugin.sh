@@ -10,9 +10,16 @@
 #   本地执行:  bash install-plugin.sh [--update|--uninstall] [--help]
 #
 # 环境变量:
-#   GH_PROXY       下载代理前缀 (如 "https://ghfast.top/")
-#   ZSH_JJ_DIR     覆盖默认安装目录
-#   ZSH_JJ_BRANCH  克隆分支/tag (默认 main)
+#   GH_PROXY         克隆插件仓库时的代理前缀 (如 "https://ghfast.top/")
+#   ZSH_JJ_DIR       覆盖默认插件安装目录
+#   ZSH_JJ_BRANCH    克隆分支/tag (默认 main)
+#   ZSH_JJ_JJ_DIR    jj 二进制安装根目录 (默认 $XDG_DATA_HOME/zsh-jj)
+#
+# 选项:
+#   --skip-jj        不下载 jj 二进制 (用户已自行管理)
+#   --update         更新插件和 jj 到最新
+#   --uninstall      卸载插件 (不删 jj, 见提示)
+#   -h|--help        帮助
 #
 # Exit codes: 0=成功 1=参数错误 2=依赖缺失 3=安装/更新失败
 
@@ -21,6 +28,7 @@ set -euo pipefail
 REPO="gycog/zsh-jj"
 DEFAULT_BRANCH="${ZSH_JJ_BRANCH:-main}"
 GH_PROXY="${GH_PROXY:-}"
+SKIP_JJ=0
 
 # ---------- 日志 ----------
 if [[ -t 1 ]]; then
@@ -104,6 +112,22 @@ install_plugin() {
     log_info "当前版本: $version"
 }
 
+install_or_update_jj() {
+    local target="$1"
+    local script="$target/tools/fetch-jj.sh"
+    if [[ ! -x "$script" ]]; then
+        log_warn "未找到 $script, 跳过 jj 自动下载 (可能是旧版插件)"
+        return 0
+    fi
+    log_info "通过插件自带脚本下载 / 更新 jj (默认目标: \${XDG_DATA_HOME:-\$HOME/.local/share}/zsh-jj/bin/jj)"
+    if ! bash "$script"; then
+        log_warn "jj 下载失败, 可手动执行: bash $script --force"
+        log_warn "或在 zsh 里加载插件后运行: j-upgrade --force"
+        return 0
+    fi
+    log_ok "jj 已就绪"
+}
+
 suggest_integration() {
     local target="$1"
     echo
@@ -161,29 +185,37 @@ zsh-jj 插件安装器
   install-plugin.sh [选项]
 
 选项:
-  (无参数)        默认: 安装或更新到最新版本
-  --update        等价于默认 (显式表达意图)
-  --uninstall     卸载插件 (不会改 ~/.zshrc)
+  (无参数)        默认: 安装插件 + 下载 / 更新 jj 到最新
+  --update        等价于默认
+  --skip-jj       仅装插件, 不下载 jj (用户自己管 jj)
+  --uninstall     卸载插件 (不会改 ~/.zshrc, 不会删 jj 二进制)
   -h, --help      显示本帮助
 
 环境变量:
-  GH_PROXY        GitHub 下载代理, 例如 "https://ghfast.top/"
-  ZSH_JJ_DIR      自定义安装目录 (覆盖 oh-my-zsh 自动检测)
-  ZSH_JJ_BRANCH   指定分支或 tag, 默认 "main"
+  GH_PROXY        克隆插件仓库用的代理前缀, 例如 "https://ghfast.top/"
+  ZSH_JJ_DIR      自定义插件目录 (覆盖 oh-my-zsh 自动检测)
+  ZSH_JJ_BRANCH   插件分支或 tag, 默认 "main"
+  ZSH_JJ_JJ_DIR   jj 二进制安装根目录, 默认 "\${XDG_DATA_HOME:-\$HOME/.local/share}/zsh-jj"
+                  (实际二进制为 \$ZSH_JJ_JJ_DIR/bin/jj)
 
 默认安装位置:
-  - 检测到 Oh-My-Zsh: $ZSH_CUSTOM/plugins/zsh-jj
-  - 否则            : $HOME/.zsh-jj
+  - 插件 (检测到 Oh-My-Zsh): \$ZSH_CUSTOM/plugins/zsh-jj
+  - 插件 (否则)            : \$HOME/.zsh-jj
+  - jj   (自管理二进制)    : \$ZSH_JJ_JJ_DIR/bin/jj
+                             默认 ~/.local/share/zsh-jj/bin/jj
 
 示例:
-  # 大陆网络加速
+  # 大陆网络加速 (应用于插件 clone; jj 下载由 curl 走系统 http_proxy)
   GH_PROXY="https://ghfast.top/" bash install-plugin.sh
 
-  # 安装到自定义目录
-  ZSH_JJ_DIR="$HOME/dotfiles/zsh-jj" bash install-plugin.sh
+  # 只装插件, 不碰 jj
+  bash install-plugin.sh --skip-jj
 
-  # 锁定指定 tag
-  ZSH_JJ_BRANCH="v0.2.0" bash install-plugin.sh
+  # 把 jj 放到自选位置
+  ZSH_JJ_JJ_DIR="\$HOME/opt/jj" bash install-plugin.sh
+
+  # 锁定插件 tag
+  ZSH_JJ_BRANCH="v0.3.0" bash install-plugin.sh
 EOF
 }
 
@@ -194,6 +226,7 @@ main() {
         case "$1" in
             --update|--upgrade) action="install" ;;
             --uninstall|--remove) action="uninstall" ;;
+            --skip-jj) SKIP_JJ=1 ;;
             -h|--help) show_help; exit 0 ;;
             *) log_err "未知参数: $1"; show_help; exit 1 ;;
         esac
@@ -207,6 +240,11 @@ main() {
     case "$action" in
         install)
             install_plugin "$target"
+            if (( SKIP_JJ )); then
+                log_info "已指定 --skip-jj, 跳过 jj 二进制下载"
+            else
+                install_or_update_jj "$target"
+            fi
             suggest_integration "$target"
             ;;
         uninstall)
