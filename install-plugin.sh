@@ -154,6 +154,16 @@ EOF
     fi
     cat <<EOF
 
+${C_CYAN}启用后在 zsh 里快速验证:${C_RESET}
+
+  ${C_YELLOW}echo \$ZSH_JJ_VERSION${C_RESET}          # 应输出插件版本 (与 $target/VERSION 一致)
+  ${C_YELLOW}whence -p jj${C_RESET} && ${C_YELLOW}jj --version${C_RESET}   # jj 应在 .../zsh-jj/bin/jj (或 \$ZSH_JJ_JJ_DIR/bin/jj)
+  ${C_YELLOW}alias js jp${C_RESET}                  # 应看到 jj 别名展开
+  ${C_YELLOW}typeset -f j-upgrade | head -3${C_RESET}   # 可选: 确认 j-upgrade 函数已加载
+
+  若 ${C_YELLOW}ZSH_JJ_VERSION${C_RESET} 为空: 检查 plugins / source 是否保存并重载 zsh.
+  若 ${C_YELLOW}jj: command not found${C_RESET}: 执行 ${C_GREEN}bash $target/tools/fetch-jj.sh${C_RESET} 或在 zsh 里 ${C_GREEN}j-upgrade${C_RESET}.
+
 使用 zinit / antigen / zplug 的用户无需本脚本, 直接:
   ${C_GREEN}zinit load gycog/zsh-jj${C_RESET}
   ${C_GREEN}antigen bundle gycog/zsh-jj${C_RESET}
